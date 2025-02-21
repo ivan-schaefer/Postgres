@@ -1,18 +1,67 @@
-sudo apt install curl ca-certificates
-sudo install -d /usr/share/postgresql-common/pgdg
-sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
-sudo sh -c 'echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
-sudo apt update
-sudo apt -y install postgresql-13
 
-su - postgres
-createuser --interactive
-createdb
+### APT
+sudo apt-get install wget ca-certificates
+wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt/ `lsb_release -cs`-pgdg main" >> /etc/apt/sources.list.d/pgdg.list'
+sudo apt-get update
+sudo apt install postgresql-15.3
+systemctl status postgresql
+psql --version
 
-grant all privileges on database <dbname> to <username>
+sudo -u postgres psql postgres
+postgres=# CREATE USER mypgsqluser WITH PASSWORD 'mypassword';
+ALTER USER mypgsqluser WITH SUPERUSER;
+\du
 
+vi /var/lib/pgsql/13/data/pg_hba.conf
+host    all             task01         127.0.0.1/32            md5
 
-psql -h <IP_Address> -p <port_no> -d <database_name> -U <DB_username> -W
-
-COPY (SELECT * FROM courses;) TO '/tmp/answers/table2_courses_data' CSV HEADER;
+systemctl reload postgresql.service
  
+psql -U task01 postgres -h 127.0.0.1
+
+
+### CONFIGURE
+
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y build-essential libreadline-dev zlib1g-dev flex bison libssl-dev
+
+cd /usr/local/src
+wget https://ftp.postgresql.org/pub/source/v15.3/postgresql-15.3.tar.gz
+tar -xvzf postgresql-15.3.tar.gz
+cd postgresql-15.3
+
+./configure --prefix=/usr/local/pgsql
+make -j$(nproc)
+sudo make install
+
+sudo useradd -m -d /var/lib/pgsql -s /bin/bash postgres
+sudo mkdir -p /var/lib/pgsql/data
+sudo chown -R postgres:postgres /var/lib/pgsql
+
+sudo -u postgres /usr/local/pgsql/bin/initdb -D /var/lib/pgsql/data
+
+sudo tee /etc/systemd/system/postgresql.service <<EOF
+[Unit]
+Description=PostgreSQL 15.3 database server
+After=network.target
+
+[Service]
+User=postgres
+Group=postgres
+ExecStart=/usr/local/pgsql/bin/postgres -D /var/lib/pgsql/data
+ExecStop=/usr/local/pgsql/bin/pg_ctl -D /var/lib/pgsql/data stop
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable postgresql
+sudo systemctl start postgresql
+
+systemctl status postgresql
+sudo -u postgres /usr/local/pgsql/bin/psql -c "CREATE USER mypgsqluser WITH PASSWORD 'mypassword';"
+sudo -u postgres /usr/local/pgsql/bin/psql -c "ALTER USER mypgsqluser WITH SUPERUSER;"
+sudo apt install postgresql-client-common
